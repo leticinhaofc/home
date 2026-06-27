@@ -21,11 +21,13 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SET_API_KEY') {
     googleApiKey = event.data.apiKey;
     
-    // Persiste a chave no cache de metadados para durabilidade
-    const responseToCache = new Response(googleApiKey);
+    // Persiste a chave no cache de metadados para durabilidade ou limpa se vazia
     event.waitUntil(
       caches.open(META_CACHE_NAME).then((cache) => {
-        return cache.put('/api-key', responseToCache);
+        if (!googleApiKey) {
+          return cache.delete('/api-key');
+        }
+        return cache.put('/api-key', new Response(googleApiKey));
       })
     );
   }
