@@ -68,15 +68,14 @@ async function handleVideoRequest(event) {
 
   const apiKey = await getStoredApiKey();
   if (!apiKey) {
-    console.error('Chave de API do Google Drive não configurada no Service Worker.');
-    return new Response('API Key not configured', { status: 500 });
+    console.warn('Chave de API do Google Drive não configurada no Service Worker. Prosseguindo via CDN...');
   }
 
   const cacheKey = `/sw-video/${fileId}`;
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(cacheKey);
 
-  const googleDriveUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`;
+  const googleDriveUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
 
   // Se já estiver no cache local completo, responde fatiando o vídeo
   if (cachedResponse) {
