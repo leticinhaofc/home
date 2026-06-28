@@ -100,31 +100,15 @@ async function handleVideoRequest(event) {
   }
 
   try {
-    let response = await fetch(googleDriveUrl, { 
-      headers,
-      referrerPolicy: 'no-referrer-when-downgrade'
-    });
+    const response = await fetch(googleDriveUrl, { headers });
 
-    // Fallback: se a API Key falhar (por exemplo, 403 por falta de ativação da API de Drive no Google Cloud)
-    if (!response.ok && response.status !== 206) {
-      console.warn(`Fetch de vídeo v3 falhou com status ${response.status}. Tentando link público uc...`);
-      const fallbackUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
-      const fallbackResponse = await fetch(fallbackUrl, { 
-        headers,
-        referrerPolicy: 'no-referrer-when-downgrade'
-      });
-      
-      const fallbackContentType = fallbackResponse.headers.get('Content-Type') || '';
-      if (fallbackContentType.indexOf('text/html') === -1 && (fallbackResponse.ok || fallbackResponse.status === 206)) {
-        response = fallbackResponse;
-      }
-    }
-
-    // Evita propagar respostas em HTML (ex: página de erro do Google ou consentimento) para o player de vídeo
     const contentType = response.headers.get('Content-Type') || '';
-    if (contentType.indexOf('text/html') !== -1) {
-      return new Response('Acesso negado ou erro ao obter mídia do Google Drive.', {
-        status: response.status || 403,
+
+    // Se o Google Drive retornar uma página HTML (erro ou login), bloqueia para evitar crash do player
+    if (contentType.includes('text/html')) {
+      console.warn('Google Drive API retornou página HTML em vez de mídia (erro ou login).');
+      return new Response('Mídia indisponível ou privada no Google Drive.', {
+        status: 403,
         statusText: 'Forbidden',
         headers: { 'Content-Type': 'text/plain' }
       });
@@ -140,7 +124,7 @@ async function handleVideoRequest(event) {
           
           // Apenas dispara download em background para arquivos abaixo de 50MB
           if (totalSize <= MAX_CACHE_SIZE_BYTES) {
-            triggerBackgroundDownload(fileId, response.url || googleDriveUrl);
+            triggerBackgroundDownload(fileId, googleDriveUrl);
           }
         }
       }
@@ -149,8 +133,10 @@ async function handleVideoRequest(event) {
     return response;
   } catch (error) {
     console.error('Erro ao buscar vídeo do Drive no Service Worker:', error);
-    // Caso falhe de vez, tenta buscar a requisição original
-    return fetch(event.request);
+    return new Response(`Erro no Service Worker: ${error.message || error}`, {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    });
   }
 }
 
