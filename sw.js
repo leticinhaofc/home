@@ -102,7 +102,6 @@ async function handleVideoRequest(event) {
   try {
     let response = await fetch(googleDriveUrl, { 
       headers,
-      referrer: event.request.referrer || undefined,
       referrerPolicy: 'no-referrer-when-downgrade'
     });
 
@@ -112,14 +111,23 @@ async function handleVideoRequest(event) {
       const fallbackUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
       const fallbackResponse = await fetch(fallbackUrl, { 
         headers,
-        referrer: event.request.referrer || undefined,
         referrerPolicy: 'no-referrer-when-downgrade'
       });
       
-      const contentType = fallbackResponse.headers.get('Content-Type') || '';
-      if (contentType.indexOf('text/html') === -1 && (fallbackResponse.ok || fallbackResponse.status === 206)) {
+      const fallbackContentType = fallbackResponse.headers.get('Content-Type') || '';
+      if (fallbackContentType.indexOf('text/html') === -1 && (fallbackResponse.ok || fallbackResponse.status === 206)) {
         response = fallbackResponse;
       }
+    }
+
+    // Evita propagar respostas em HTML (ex: página de erro do Google ou consentimento) para o player de vídeo
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.indexOf('text/html') !== -1) {
+      return new Response('Acesso negado ou erro ao obter mídia do Google Drive.', {
+        status: response.status || 403,
+        statusText: 'Forbidden',
+        headers: { 'Content-Type': 'text/plain' }
+      });
     }
 
     // Se for o início do vídeo (bytes=0-1), verifica se vale a pena cachear em background
