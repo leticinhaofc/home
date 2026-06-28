@@ -68,7 +68,7 @@ async function handleVideoRequest(event) {
     return fetch(event.request);
   }
 
-  const apiKey = await getStoredApiKey();
+  let apiKey = url.searchParams.get('key') || await getStoredApiKey();
   if (!apiKey) {
     console.warn('Chave de API do Google Drive não configurada no Service Worker. Prosseguindo via CDN...');
   }
@@ -77,7 +77,9 @@ async function handleVideoRequest(event) {
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(cacheKey);
 
-  const googleDriveUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+  const googleDriveUrl = apiKey 
+    ? `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`
+    : `https://lh3.googleusercontent.com/d/${fileId}`;
 
   // Se já estiver no cache local completo, responde fatiando o vídeo
   if (cachedResponse) {
@@ -98,7 +100,27 @@ async function handleVideoRequest(event) {
   }
 
   try {
-    const response = await fetch(googleDriveUrl, { headers });
+    let response = await fetch(googleDriveUrl, { 
+      headers,
+      referrer: event.request.referrer || undefined,
+      referrerPolicy: 'no-referrer-when-downgrade'
+    });
+
+    // Fallback: se a API Key falhar (por exemplo, 403 por falta de ativação da API de Drive no Google Cloud)
+    if (!response.ok && response.status !== 206) {
+      console.warn(`Fetch de vídeo v3 falhou com status ${response.status}. Tentando link público uc...`);
+      const fallbackUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+      const fallbackResponse = await fetch(fallbackUrl, { 
+        headers,
+        referrer: event.request.referrer || undefined,
+        referrerPolicy: 'no-referrer-when-downgrade'
+      });
+      
+      const contentType = fallbackResponse.headers.get('Content-Type') || '';
+      if (contentType.indexOf('text/html') === -1 && (fallbackResponse.ok || fallbackResponse.status === 206)) {
+        response = fallbackResponse;
+      }
+    }
 
     // Se for o início do vídeo (bytes=0-1), verifica se vale a pena cachear em background
     if (response.ok || response.status === 206) {
@@ -110,7 +132,7 @@ async function handleVideoRequest(event) {
           
           // Apenas dispara download em background para arquivos abaixo de 50MB
           if (totalSize <= MAX_CACHE_SIZE_BYTES) {
-            triggerBackgroundDownload(fileId, googleDriveUrl);
+            triggerBackgroundDownload(fileId, response.url || googleDriveUrl);
           }
         }
       }
